@@ -266,13 +266,16 @@
      :y y'
      :throttle max-throttle}))
 
-(defn oil-target?
+(defn oilable?
   "predicate for an enemy reaper that is harvesting a wreck"
-  [entity state]
-  (and (not (mine? entity))
-       (reaper? entity)
-       (in-wreck? entity state)
-       (not (in-oil? entity state))))
+  [target self state]
+  (and (not (mine? target))
+       (reaper? target)
+       (> (:my-rage state) 30)
+       (in-range? self target)
+       (not (inside? (assoc target :radius skill-radius) self))
+       (in-wreck? target state)
+       (not (in-oil? target state))))
 
 (defn highest-enemy-reaper
   [state]
@@ -288,7 +291,6 @@
   [{:keys [x y] :as self}
    {tx :x ty :y :as target}]
   ;TODO make sure my reaper is not hit...
-  ;FIXME when range is long, looks like it tries the oil command and fails instead of shooting short
   (let [dx (- tx x)
         dy (- ty y)
         dist-sq (+ (* dx dx) (* dy dy))
@@ -302,19 +304,13 @@
 
 (defn doof-action
   [state]
-  ;TODO check order of operations, we might need to run an update on the targets before deciding to hit them
   (let [doof (:doof state)
         oil-target (highest-enemy-reaper state)
-        rage (:my-rage state)]
+        oil-target' (move oil-target)]
     (cond
-      (and (> rage 30)
-           (in-range? doof oil-target)
-           (in-wreck? oil-target state)
-           (not (in-oil? oil-target state)))
-      (throw-oil doof oil-target)
-
-      :else
-      (go-through doof oil-target))))
+      (oilable? oil-target doof state)  (throw-oil doof oil-target)
+      (oilable? oil-target' doof state) (throw-oil doof oil-target')
+      :else                             (go-through doof oil-target))))
 
 (comment
   (doof-action {:doof {:x 0 :y 3000}}))
