@@ -75,6 +75,14 @@
   (< (+ (* x x) (* y y))
      (* field-radius field-radius)))
 
+(defn in-wreck?
+  [entity state]
+  (some #(inside? % entity) (:wrecks state)))
+
+(defn in-oil?
+  [entity state]
+  (some #(inside? % entity) (:oil state)))
+
 (defn thrust
   "Update the vx and vy of the entity applying the given throttle action
 
@@ -205,12 +213,17 @@
 
 (defn reaper-action
   [state]
-  (if-let [nearest-wreck (when (not-empty (:wrecks state))
-                           (apply min-key #(distance-sq (:reaper state) %) (:wrecks state)))]
-    (if (inside? nearest-wreck (:reaper state))
-      (stop (:reaper state))
-      (go-to (:reaper state) nearest-wreck))
-    (go-near (:reaper state) (:destroyer state) 200)))
+  (let [nearest-wreck (some->> (:wrecks state)
+                               (filter #(not (in-oil? % state)))
+                               (not-empty)
+                               (apply min-key #(distance-sq (:reaper state) %)))
+        fattest-tanker (some->> (:tankers state)
+                                (not-empty)
+                                (apply max-key :extra))]
+    (cond
+      (and nearest-wreck (inside? nearest-wreck (:reaper state))) (stop (:reaper state))
+      nearest-wreck                                               (go-to (:reaper state) nearest-wreck)
+      fattest-tanker                                              (go-near (:reaper state) fattest-tanker 100))))
 
 (defn destroyer-target?
   [entity]
@@ -255,14 +268,6 @@
     {:x x'
      :y y'
      :throttle max-throttle}))
-
-(defn in-wreck?
-  [entity state]
-  (some #(inside? % entity) (:wrecks state)))
-
-(defn in-oil?
-  [entity state]
-  (some #(inside? % entity) (:oil state)))
 
 (defn oil-target?
   "predicate for an enemy reaper that is harvesting a wreck"
