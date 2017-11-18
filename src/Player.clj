@@ -317,16 +317,18 @@
 
 (defn actions
   [state]
-  [(reaper-action state)
-   (destroyer-action state)
-   (doof-action state)])
+  [(future (reaper-action state))
+   (future (destroyer-action state))
+   (future (doof-action state))])
 
 (defn action-str
-  [{:keys [x y throttle note] :as action}]
+  [{:keys [x y throttle note timeout] :as action}]
   (cond
     (and x y throttle) (format "%d %d %d %s" (int x) (int y) (int throttle) note)
     (and x y) (format "SKILL %d %d %s" (int x) (int y) note)
-    :else "WAIT"))
+    timeout (str "WAIT TIMEOUT " timeout)
+    (nil? action) "WAIT null"
+    :else "WAIT fallthrough"))
 
 (def unit-keys
   [:unit-id
@@ -380,4 +382,8 @@
       (print-table-err unit-keys (:units state))
 
       ; Write action to stdout
-      (run! println (map action-str (actions state))))))
+      (doseq [action (actions state)]
+        (-> action
+            (deref 45 {:timeout 45})
+            (action-str)
+            (println))))))
