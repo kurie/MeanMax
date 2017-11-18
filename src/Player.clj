@@ -249,13 +249,9 @@
         nearest-tanker (some->> (:tankers state)
                                 (filter in-bounds?)
                                 (not-empty)
-                                (apply min-key #(distance-sq (:reaper state) %)))
-        rage (:my-rage state)
-        nade-targets (filter #(and (destroyer-target? %) (in-range? destroyer %))
-                             (:units state))]
+                                (apply min-key #(distance-sq (:reaper state) %)))]
     (cond
-      ;(and (>= rage 60) (not-empty nade-targets)) (throw-grenade nade-targets)
-      nearest-tanker                              (go-to destroyer nearest-tanker))))
+      nearest-tanker (go-to destroyer nearest-tanker))))
 
 (defn circle-doof
   [doof]
