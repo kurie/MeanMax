@@ -218,6 +218,7 @@
                                (not-empty)
                                (apply min-key #(distance-sq (:reaper state) %)))
         fattest-tanker (some->> (:tankers state)
+                                (filter in-bounds?)
                                 (not-empty)
                                 (apply max-key :extra))]
     (cond
