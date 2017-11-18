@@ -21,11 +21,21 @@
 ;; model
 
 (def ^:const reaper-type 0)
+(def ^:const destroyer-type 1)
+(def ^:const tanker-type 3)
 (def ^:const wreck-type 4)
+(def ^:const reaper-mass 0.5)
 (def ^:const reaper-radius 400)
 (def ^:const reaper-friction 0.2)
+(def ^:const destroyer-friction 0.3)
 (def ^:const epsilon 0.00001)
 (def ^:const max-throttle 300)
+(def ^:const field-radius 6000)
+
+(defn in-bounds?
+  [{:keys [x y] :as entity}]
+  (< (+ (* x x) (* y y))
+     (* field-radius field-radius)))
 
 (defn thrust
   "Update the vx and vy of the entity applying the given throttle action
@@ -117,6 +127,12 @@
      :throttle throttle
      :note (:unit-id target-entity)}))
 
+(defn go-near
+  [entity
+   target-entity]
+  (go-to entity
+         (update target-entity :x + (:radius entity) (:radius target-entity))))
+
 (defn stop
   "Try to kill velocity"
   [{:keys [x y vx vy mass] :as entity}]
@@ -137,16 +153,25 @@
 
 (defn reaper-action
   [state]
-  (when-let [nearest-wreck (when (not-empty (:wrecks state))
-                             (apply min-key #(distance-sq (:reaper state) %) (:wrecks state)))]
+  (if-let [nearest-wreck (when (not-empty (:wrecks state))
+                           (apply min-key #(distance-sq (:reaper state) %) (:wrecks state)))]
     (if (inside? nearest-wreck (:reaper state))
       (stop (:reaper state))
-      (go-to (:reaper state) nearest-wreck))))
+      (go-to (:reaper state) nearest-wreck))
+    (go-near (:reaper state) (:destroyer state))))
+
+(defn destroyer-action
+  [state]
+  (when-let [nearest-tanker (some->> (:tankers state)
+                                     (filter in-bounds?)
+                                     (not-empty)
+                                     (apply min-key #(distance-sq (:reaper state) %)))]
+    (go-to (:destroyer state) nearest-tanker)))
 
 (defn actions
   [state]
   [(reaper-action state)
-   nil
+   (destroyer-action state)
    nil])
 
 (defn action-str
@@ -167,6 +192,26 @@
    :vy
    :extra
    :extra2])
+
+(defn mine?
+  [entity]
+  (zero? (:player entity)))
+
+(defn reaper?
+  [entity]
+  (= reaper-type (:unit-type entity)))
+
+(defn destroyer?
+  [entity]
+  (= destroyer-type (:unit-type entity)))
+
+(defn wreck?
+  [entity]
+  (= wreck-type (:unit-type entity)))
+
+(defn tanker?
+  [entity]
+  (= tanker-type (:unit-type entity)))
 
 (defn read-state
   []
@@ -191,9 +236,10 @@
                                  :extra2 (read))))]
     (assoc base
            :units units
-           :wrecks (filter #(= wreck-type (:unit-type %)) units)
-           :reaper (first (filter #(and (= reaper-type (:unit-type %))
-                                        (zero? (:player %))) units)))))
+           :wrecks (filter wreck? units)
+           :tankers (filter tanker? units)
+           :reaper (first (filter #(and (reaper? %) (mine? %)) units))
+           :destroyer (first (filter #(and (destroyer? %) (mine? %)) units)))))
 
 (defn -main [& args]
   (while true
