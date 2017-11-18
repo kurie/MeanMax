@@ -13,6 +13,7 @@
        (* dy dy))))
 
 (defn inside?
+  "Is the center of entity2 within entity1"
   [{:keys [radius] :as entity1}
    entity2]
   (< (distance-sq entity1 entity2)
@@ -22,8 +23,11 @@
 
 (def ^:const reaper-type 0)
 (def ^:const destroyer-type 1)
+(def ^:const doof-type 2)
 (def ^:const tanker-type 3)
 (def ^:const wreck-type 4)
+(def ^:const tar-type 5)
+(def ^:const oil-type 6)
 (def ^:const reaper-mass 0.5)
 (def ^:const reaper-radius 400)
 (def ^:const reaper-friction 0.2)
@@ -31,6 +35,40 @@
 (def ^:const epsilon 0.00001)
 (def ^:const max-throttle 300)
 (def ^:const field-radius 6000)
+(def ^:const skill-range 2000)
+(def ^:const skill-radius 1000)
+
+(defn mine?
+  [entity]
+  (zero? (:player entity)))
+
+(defn reaper?
+  [entity]
+  (= reaper-type (:unit-type entity)))
+
+(defn destroyer?
+  [entity]
+  (= destroyer-type (:unit-type entity)))
+
+(defn doof?
+  [entity]
+  (= doof-type (:unit-type entity)))
+
+(defn wreck?
+  [entity]
+  (= wreck-type (:unit-type entity)))
+
+(defn tanker?
+  [entity]
+  (= tanker-type (:unit-type entity)))
+
+(defn tar?
+  [entity]
+  (= tar-type (:unit-type entity)))
+
+(defn oil?
+  [entity]
+  (= oil-type (:unit-type entity)))
 
 (defn in-bounds?
   [{:keys [x y] :as entity}]
@@ -125,13 +163,27 @@
     {:x head-x
      :y head-y
      :throttle throttle
-     :note (:unit-id target-entity)}))
+     :note (str "GOTO " (:unit-id target-entity))}))
+
+(defn go-through
+  [{:keys [x y vx vy mass] :as entity}
+   target-entity]
+  (let [{tx :x ty :y :as target} (move target-entity)
+        to-target [(- tx x)
+                   (- ty y)]
+        dv [(- (to-target 0) vx)
+            (- (to-target 1) vy)]]
+    {:x (+ x (dv 0))
+     :y (+ y (dv 1))
+     :throttle max-throttle
+     :note (str "GOTHRU " (:unit-id target-entity))}))
 
 (defn go-near
   [entity
-   target-entity]
+   target-entity
+   & [buffer]]
   (go-to entity
-         (update target-entity :x + (:radius entity) (:radius target-entity))))
+         (update target-entity :x + (:radius entity) (:radius target-entity) (or buffer 0))))
 
 (defn stop
   "Try to kill velocity"
@@ -158,27 +210,125 @@
     (if (inside? nearest-wreck (:reaper state))
       (stop (:reaper state))
       (go-to (:reaper state) nearest-wreck))
-    (go-near (:reaper state) (:destroyer state))))
+    (go-near (:reaper state) (:destroyer state) 200)))
+
+(defn destroyer-target?
+  [entity]
+  (and (not (mine? entity))
+       (reaper? entity)))
+
+(defn throw-grenade
+  "TODO pick a target and throw in a reasonable spot near it"
+  [targets]
+  {:x (+ 1 (:x (first targets)))
+   :y (+ 1 (:y (first targets)))})
+
+(defn in-range?
+  "in range of a skill attack"
+  [self entity]
+  (inside? (assoc self :radius skill-range)
+           entity))
 
 (defn destroyer-action
   [state]
-  (when-let [nearest-tanker (some->> (:tankers state)
-                                     (filter in-bounds?)
-                                     (not-empty)
-                                     (apply min-key #(distance-sq (:reaper state) %)))]
-    (go-to (:destroyer state) nearest-tanker)))
+  (let [destroyer (:destroyer state)
+        nearest-tanker (some->> (:tankers state)
+                                (filter in-bounds?)
+                                (not-empty)
+                                (apply min-key #(distance-sq (:reaper state) %)))
+        rage (:my-rage state)
+        nade-targets (filter #(and (destroyer-target? %) (in-range? destroyer %))
+                             (:units state))]
+    (cond
+      ;(and (>= rage 60) (not-empty nade-targets)) (throw-grenade nade-targets)
+      nearest-tanker                              (go-to destroyer nearest-tanker))))
+
+(defn circle-doof
+  [doof]
+  (let [x (:x doof)
+        y (:y doof)
+        theta (Math/atan2 (double y) (double x))
+        r 3000
+        theta' (+ theta (/ Math/PI 8))
+        x' (* r (Math/cos theta'))
+        y' (* r (Math/sin theta'))]
+    {:x x'
+     :y y'
+     :throttle max-throttle}))
+
+(defn in-wreck?
+  [entity state]
+  (some #(inside? % entity) (:wrecks state)))
+
+(defn in-oil?
+  [entity state]
+  (some #(inside? % entity) (:oil state)))
+
+(defn oil-target?
+  "predicate for an enemy reaper that is harvesting a wreck"
+  [entity state]
+  (and (not (mine? entity))
+       (reaper? entity)
+       (in-wreck? entity state)
+       (not (in-oil? entity state))))
+
+(defn highest-enemy-reaper
+  [state]
+  (let [reapers (->> (:units state)
+                     (filter reaper?)
+                     (group-by :player))]
+    (if (> (:enemy-score-1 state) (:enemy-score-2 state))
+      (first (get reapers 1))
+      (first (get reapers 2)))))
+
+(defn throw-oil
+  "Try to throw oil at the given target, throwing short if we can still get them in the oil radius"
+  [{:keys [x y] :as self}
+   {tx :x ty :y :as target}]
+  ;TODO make sure my reaper is not hit...
+  ;FIXME when range is long, looks like it tries the oil command and fails instead of shooting short
+  (let [dx (- tx x)
+        dy (- ty y)
+        dist-sq (+ (* dx dx) (* dy dy))
+        act-dist-sq (min (* skill-range skill-range)
+                         dist-sq)
+        scale (Math/sqrt (/ act-dist-sq dist-sq))]
+    (prn-err "throw-oil scale" scale)
+    {:x (+ x (* scale dx))
+     :y (+ y (* scale dy))
+     :note (str "OIL " (:unit-id target))}))
+
+(defn doof-action
+  [state]
+  ;TODO check order of operations, we might need to run an update on the targets before deciding to hit them
+  (let [doof (:doof state)
+        oil-target (highest-enemy-reaper state)
+        rage (:my-rage state)]
+    (cond
+      (and (> rage 30)
+           (in-range? doof oil-target)
+           (in-wreck? oil-target state)
+           (not (in-oil? oil-target state)))
+      (throw-oil doof oil-target)
+
+      :else
+      (go-through doof oil-target))))
+
+(comment
+  (doof-action {:doof {:x 0 :y 3000}}))
 
 (defn actions
   [state]
   [(reaper-action state)
    (destroyer-action state)
-   nil])
+   (doof-action state)])
 
 (defn action-str
   [{:keys [x y throttle note] :as action}]
-  (if action
-    (format "%d %d %d %s" (int x) (int y) (int throttle) note)
-    "WAIT"))
+  (cond
+    (and x y throttle) (format "%d %d %d %s" (int x) (int y) (int throttle) note)
+    (and x y) (format "SKILL %d %d %s" (int x) (int y) note)
+    :else "WAIT"))
 
 (def unit-keys
   [:unit-id
@@ -192,26 +342,6 @@
    :vy
    :extra
    :extra2])
-
-(defn mine?
-  [entity]
-  (zero? (:player entity)))
-
-(defn reaper?
-  [entity]
-  (= reaper-type (:unit-type entity)))
-
-(defn destroyer?
-  [entity]
-  (= destroyer-type (:unit-type entity)))
-
-(defn wreck?
-  [entity]
-  (= wreck-type (:unit-type entity)))
-
-(defn tanker?
-  [entity]
-  (= tanker-type (:unit-type entity)))
 
 (defn read-state
   []
@@ -238,8 +368,11 @@
            :units units
            :wrecks (filter wreck? units)
            :tankers (filter tanker? units)
+           :oil (filter oil? units)
+           :tar (filter tar? units)
            :reaper (first (filter #(and (reaper? %) (mine? %)) units))
-           :destroyer (first (filter #(and (destroyer? %) (mine? %)) units)))))
+           :destroyer (first (filter #(and (destroyer? %) (mine? %)) units))
+           :doof (first (filter #(and (doof? %) (mine? %)) units)))))
 
 (defn -main [& args]
   (while true
