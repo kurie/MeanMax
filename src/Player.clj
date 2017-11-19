@@ -233,7 +233,7 @@
         point (-> target
                   (move)
                   (cart->polar)
-                  (update :r (* sign dist))
+                  (update :r + (* sign dist))
                   (polar->cart))]
     (assoc (go-to self point)
            :note (str "GO-NEAR-R " (:unit-id target)))))
