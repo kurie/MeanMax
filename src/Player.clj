@@ -313,6 +313,8 @@
   (let [destroyer (:destroyer state)
         nearest-tanker (some->> (:tankers state)
                                 (filter in-bounds?)
+                                (filter #(< (Math/sqrt (distance-sq % destroyer))
+                                            (+ (:radius destroyer) (:radius %) 300)))
                                 (not-empty)
                                 (apply min-key #(distance-sq (:reaper state) %)))]
     (cond
@@ -320,6 +322,9 @@
            (in-range? destroyer (:reaper state))
            (protect-reaper? destroyer state))
       (protect-reaper destroyer state)
+
+      nearest-tanker
+      (go-to destroyer nearest-tanker)
 
       :else
       (follow-reaper destroyer state))))
