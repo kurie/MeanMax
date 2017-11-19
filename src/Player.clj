@@ -266,16 +266,13 @@
   [state]
   ;TODO find more valuable wreck overlaps
   (let [self (:reaper state)
-        nearest-wreck (nearest-entity self
-                                      (filter #(not (in-oil? % state)) (:wrecks state)))
-        fattest-tanker (some->> (:tankers state)
-                                (filter in-bounds?)
-                                (not-empty)
-                                (apply max-key :extra))]
+        nearest-clean-wreck (nearest-entity self
+                                            (filter #(not (in-oil? % state)) (:wrecks state)))
+        nearest-wreck (nearest-entity self (:wrecks state))]
     (cond
-      (and nearest-wreck (inside? nearest-wreck self)) (stop self)
-      nearest-wreck                                    (go-to self nearest-wreck)
-      fattest-tanker                                   (go-near self fattest-tanker 100))))
+      (and nearest-clean-wreck (inside? nearest-clean-wreck self)) (stop self)
+      nearest-clean-wreck                                          (go-to self nearest-clean-wreck)
+      nearest-wreck                                                (go-to self nearest-wreck))))
 
 (defn destroyer-target?
   [entity]
