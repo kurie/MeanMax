@@ -288,13 +288,15 @@
   "Should we protect the reaper?"
   [self state]
   ;TODO
-  false)
+  true)
 
 (defn protect-reaper
   "Returns an action to protect the reaper"
   [self state]
-  ;TODO
-  nil)
+  (let [reaper (:reaper state)]
+    {:x (:x reaper)
+     :y (:y reaper)
+     :note "PROTEC"}))
 
 (defn follow-reaper
   [self state]
@@ -308,8 +310,13 @@
                                 (not-empty)
                                 (apply min-key #(distance-sq (:reaper state) %)))]
     (cond
-      (and (nade-rage? state) (protect-reaper? destroyer state)) (protect-reaper destroyer state)
-      :else                                                      (follow-reaper destroyer state))))
+      (and (nade-rage? state)
+           (in-range? destroyer (:reaper state))
+           (protect-reaper? destroyer state))
+      (protect-reaper destroyer state)
+
+      :else
+      (follow-reaper destroyer state))))
 
 (defn circle-doof
   [doof]
