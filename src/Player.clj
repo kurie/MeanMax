@@ -58,11 +58,11 @@
 
 (defn nade-rage?
   [state]
-  (> (:my-rage state) 60))
+  (>= (:my-rage state) 60))
 
 (defn oil-rage?
   [state]
-  (> (:my-rage state) 30))
+  (>= (:my-rage state) 30))
 
 (defn mine?
   [entity]
