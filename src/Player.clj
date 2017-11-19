@@ -12,6 +12,21 @@
     (+ (* dx dx)
        (* dy dy))))
 
+(defn cart->polar
+  "Returns a map {:theta :r-squared} for the {:x :y} coordinates of the given entity"
+  [{:keys [x y]}]
+  {:theta (Math/atan2 (double y) (double x))
+   :r (Math/sqrt (+ (* x x) (* y y)))})
+
+(defn polar->cart
+  "returns a map {:x :y} for the given {:theta :r-squared} polar coordinates"
+  [{:keys [theta r]}]
+  {:x (* r (Math/cos theta))
+   :y (* r (Math/sin theta))})
+
+(comment
+  (polar->cart (cart->polar {:x 123 :y 456})))
+
 (defn inside?
   "Is the center of entity2 within entity1"
   [{:keys [radius] :as entity1}
@@ -40,6 +55,14 @@
 (def ^:const field-radius 6000)
 (def ^:const skill-range 2000)
 (def ^:const skill-radius 1000)
+
+(defn nade-rage?
+  [state]
+  (> (:my-rage state) 60))
+
+(defn oil-rage?
+  [state]
+  (> (:my-rage state) 30))
 
 (defn mine?
   [entity]
@@ -190,11 +213,25 @@
      :note (str "GOTHRU " (:unit-id target-entity))}))
 
 (defn go-near
-  [entity
-   target-entity
-   & [buffer]]
-  (go-to entity
-         (update target-entity :x + (:radius entity) (:radius target-entity) (or buffer 0))))
+  [self target & [buffer]]
+  (assoc (go-to self
+                (-> target
+                    (update :x + (:radius self) (:radius target) (or buffer 0))))
+         :note (str "GO-NEAR " (:unit-id target))))
+
+(defn go-near-radial
+  [self target & [buffer]]
+  (let [dist (+ (or buffer 0) (:radius self) (:radius target))
+        point (-> target
+                  (move)
+                  (cart->polar)
+                  (update :r - dist)
+                  (polar->cart))]
+    (assoc (go-to self point)
+           :note (str "GO-NEAR-R " (:unit-id target)))))
+
+(comment
+  (go-near-radial {:radius 100 :x 100 :y 200 :vx 0 :vy 0 :mass 0.5} {:radius 200 :x 100 :y 0 :vx 500 :vy 0}))
 
 (defn stop
   "Try to kill velocity"
@@ -241,17 +278,27 @@
   (and (not (mine? entity))
        (reaper? entity)))
 
-(defn throw-grenade
-  "TODO pick a target and throw in a reasonable spot near it"
-  [targets]
-  {:x (+ 1 (:x (first targets)))
-   :y (+ 1 (:y (first targets)))})
-
 (defn in-range?
   "in range of a skill attack"
   [self entity]
   (inside? (assoc self :radius skill-range)
            entity))
+
+(defn protect-reaper?
+  "Should we protect the reaper?"
+  [self state]
+  ;TODO
+  false)
+
+(defn protect-reaper
+  "Returns an action to protect the reaper"
+  [self state]
+  ;TODO
+  nil)
+
+(defn follow-reaper
+  [self state]
+  (go-near-radial self (:reaper state) (/ skill-range 2)))
 
 (defn destroyer-action
   [state]
@@ -261,7 +308,8 @@
                                 (not-empty)
                                 (apply min-key #(distance-sq (:reaper state) %)))]
     (cond
-      nearest-tanker (go-to destroyer nearest-tanker))))
+      (and (nade-rage? state) (protect-reaper? destroyer state)) (protect-reaper destroyer state)
+      :else                                                      (follow-reaper destroyer state))))
 
 (defn circle-doof
   [doof]
