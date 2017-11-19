@@ -68,6 +68,10 @@
   [entity]
   (zero? (:player entity)))
 
+(defn enemy?
+  [entity]
+  (#{1 2} (:player entity)))
+
 (defn reaper?
   [entity]
   (= reaper-type (:unit-type entity)))
@@ -285,10 +289,12 @@
            entity))
 
 (defn protect-reaper?
-  "Should we protect the reaper?"
+  "Should we protect the reaper by throwing a grenade at its center?"
   [self state]
-  ;TODO
-  true)
+  (let [nade (assoc (:reaper state) :radius skill-radius)
+        enemies (filter enemy? (:units state))]
+    (and (in-wreck? (:reaper state) state)
+         (some #(inside? nade %) enemies))))
 
 (defn protect-reaper
   "Returns an action to protect the reaper"
