@@ -211,20 +211,27 @@
     ;(thrust entity (go-to entity {:x 1010 :y 1010}))
     (update-reaper entity (go-to entity {:x 1010 :y 1010}))))
 
+(defn nearest-entity
+  [self entities]
+  (when (not-empty entities)
+    (apply min-key
+           #(distance-sq self %)
+           entities)))
+
 (defn reaper-action
   [state]
-  (let [nearest-wreck (some->> (:wrecks state)
-                               (filter #(not (in-oil? % state)))
-                               (not-empty)
-                               (apply min-key #(distance-sq (:reaper state) %)))
+  ;TODO find more valuable wreck overlaps
+  (let [self (:reaper state)
+        nearest-wreck (nearest-entity self
+                                      (filter #(not (in-oil? % state)) (:wrecks state)))
         fattest-tanker (some->> (:tankers state)
                                 (filter in-bounds?)
                                 (not-empty)
                                 (apply max-key :extra))]
     (cond
-      (and nearest-wreck (inside? nearest-wreck (:reaper state))) (stop (:reaper state))
-      nearest-wreck                                               (go-to (:reaper state) nearest-wreck)
-      fattest-tanker                                              (go-near (:reaper state) fattest-tanker 100))))
+      (and nearest-wreck (inside? nearest-wreck self)) (stop self)
+      nearest-wreck                                    (go-to self nearest-wreck)
+      fattest-tanker                                   (go-near self fattest-tanker 100))))
 
 (defn destroyer-target?
   [entity]
