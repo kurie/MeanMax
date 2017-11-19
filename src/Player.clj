@@ -225,11 +225,15 @@
 
 (defn go-near-radial
   [self target & [buffer]]
-  (let [dist (+ (or buffer 0) (:radius self) (:radius target))
+  (let [buffer (or buffer 0)
+        dist (+ (Math/abs buffer) (:radius self) (:radius target))
+        sign (if (zero? buffer)
+               1
+               (/ buffer (Math/abs buffer)))
         point (-> target
                   (move)
                   (cart->polar)
-                  (update :r - dist)
+                  (update :r (* sign dist))
                   (polar->cart))]
     (assoc (go-to self point)
            :note (str "GO-NEAR-R " (:unit-id target)))))
@@ -303,7 +307,7 @@
 
 (defn follow-reaper
   [self state]
-  (go-near-radial self (:reaper state) (/ skill-range 2)))
+  (go-near-radial self (:reaper state) (- (/ skill-range 2))))
 
 (defn destroyer-action
   [state]
