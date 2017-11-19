@@ -272,11 +272,15 @@
   (let [self (:reaper state)
         nearest-clean-wreck (nearest-entity self
                                             (filter #(not (in-oil? % state)) (:wrecks state)))
-        nearest-wreck (nearest-entity self (:wrecks state))]
+        nearest-wreck (nearest-entity self (:wrecks state))
+        nearest-dest-tanker (some->> (:tankers state)
+                                     (not-empty)
+                                     (apply min-key #(distance-sq % (:destroyer state))))]
     (cond
       (and nearest-clean-wreck (inside? nearest-clean-wreck self)) (stop self)
       nearest-clean-wreck                                          (go-to self nearest-clean-wreck)
-      nearest-wreck                                                (go-to self nearest-wreck))))
+      nearest-wreck                                                (go-to self nearest-wreck)
+      :else                                                        (go-near-radial self nearest-dest-tanker (/ skill-range 2)))))
 
 (defn destroyer-target?
   [entity]
