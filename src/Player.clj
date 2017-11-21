@@ -1,5 +1,6 @@
 (ns Player
-  (:require [clojure.pprint :as pp])
+  (:require [clojure.pprint :as pp]
+            [clojure.set :as set])
   (:gen-class))
 
 ;; math
@@ -460,6 +461,50 @@
    :extra
    :extra2])
 
+(defn find-overlaps
+  [wrecks]
+  (for [wreck wrecks]
+    (assoc wreck :overlaps (set (filter #(and (overlaps? wreck %) (not= wreck %)) wrecks)))))
+
+(defn bron-kerbosch
+  "Returns all of the maximal cliques in the graph formed by the vertices in
+  set p, given a neighbors-fn that takes a vertex and returns a set of its
+  neighbors"
+  ([neighbors-fn p] (bron-kerbosch #{} (set p) #{} neighbors-fn))
+  ([r p x neighbors-fn]
+   (if (and (empty? p) (empty? x))
+     [r]
+     (loop [p p
+            x x
+            result []]
+       (let [v (first p)
+             neighbors (neighbors-fn v)
+             new-cliques (bron-kerbosch (conj r v)
+                                        (set/intersection p neighbors)
+                                        (set/intersection x neighbors)
+                                        neighbors-fn)]
+         (if (empty? p)
+           result
+           (recur (disj p v)
+                  (conj x v)
+                  (into result new-cliques))))))))
+
+(comment
+  (let [wikipedia-nodes [1 2 3 4 5 6]
+        wikipedia-neigh {1 #{2 5}
+                         2 #{1 3 5}
+                         3 #{2 4}
+                         4 #{3 5 6}
+                         5 #{1 2 4}
+                         6 #{4}}]
+    (bron-kerbosch wikipedia-neigh wikipedia-nodes)))
+
+(defn find-overlap-groups
+  [wrecks]
+  (->> wrecks
+       (remove #(empty? (:overlaps %)))
+       (bron-kerbosch :overlaps)))
+
 (defn read-state
   []
   (let [base (hash-map :my-score (read)
@@ -480,10 +525,12 @@
                                  :vx (read)
                                  :vy (read)
                                  :extra (read)
-                                 :extra2 (read))))]
+                                 :extra2 (read))))
+        wrecks (find-overlaps (filter wreck? units))]
     (assoc base
            :units units
-           :wrecks (filter wreck? units)
+           :wrecks wrecks
+           :overlaps (find-overlap-groups wrecks)
            :tankers (filter tanker? units)
            :oil (filter oil? units)
            :tar (filter tar? units)
@@ -495,8 +542,9 @@
   (while true
     (let [state (read-state)]
 
-      (pp-err (select-keys state [:my-score :enemy-score-1 :enemy-score-2 :my-rage :enemy-rage-1 :enemy-rage-2 :unit-count]))
-      (print-table-err unit-keys (:units state))
+      ;(pp-err (select-keys state [:my-score :enemy-score-1 :enemy-score-2 :my-rage :enemy-rage-1 :enemy-rage-2 :unit-count]))
+      ;(print-table-err unit-keys (:units state))
+      (pp-err (:overlaps state))
 
       ; Write action to stdout
       (doseq [action (actions state)]
