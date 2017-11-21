@@ -31,7 +31,7 @@
   [entity1 entity2]
   (let [dist-sq (distance-sq entity1 entity2)
         radii (+ (:radius entity1) (:radius entity2))]
-    (< dist-sq (* radii radii))))
+    (<= dist-sq (* radii radii))))
 
 (defn intersections
   "returns the points where the two entities' bounding circles intersect, or
