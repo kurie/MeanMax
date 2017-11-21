@@ -35,13 +35,13 @@
 
 (defn intersections
   "returns the points where the two entities' bounding circles intersect, or
-  [nil, nil] if they do not intersect (may be non-overlapping or one entirely
+  nil if they do not intersect (may be non-overlapping or one entirely
   within the other) or if they are the same circle."
   [{x1 :x y1 :y r1 :radius :as entity1}
    {x2 :x y2 :y r2 :radius :as entity2}]
   (if (or (and (= x1 x2) (= y1 y2)) ;concentric circles
           (not (overlaps? entity1 entity2)))
-    [nil nil]
+    nil
     (let [dsq (distance-sq entity1 entity2)
           r1sq (* r1 r1)
           r2sq (* r2 r2)
@@ -59,8 +59,8 @@
         :y (+ ymid (* h-div-d dx))}])))
 
 (comment
-  (= [nil nil] (intersections {:x 0 :y 0 :radius 123} {:x 0 :y 0 :radius 456}))
-  (= [nil nil] (intersections {:x 0 :y 0 :radius 100} {:x 301 :y 0 :radius 200}))
+  (nil? (intersections {:x 0 :y 0 :radius 123} {:x 0 :y 0 :radius 456}))
+  (nil? (intersections {:x 0 :y 0 :radius 100} {:x 301 :y 0 :radius 200}))
   (= [{:x 100.0 :y 0.0} {:x 100.0 :y 0.0}] (intersections {:x 0 :y 0 :radius 100} {:x 300 :y 0 :radius 200})))
 
 (defn inside?
