@@ -388,8 +388,9 @@
                                             (filter #(not (in-oil? % state)) (:wrecks state)))
         nearest-wreck (nearest-entity self (:wrecks state))
         nearest-dest-tanker (some->> (:tankers state)
+                                     (filter #(in-bounds? %))
                                      (not-empty)
-                                     (apply min-key #(distance-sq % (:destroyer state)))) ;TODO make sure it's inbounds, ideally within the 4000 unit circle
+                                     (apply min-key #(distance-sq % (:destroyer state)))) ;TODO ideally within the 4000 unit circle, maybe do a check
         best-clean-overlap (some->> (:overlaps state)
                                     (filter #(not (in-oil? % state)))
                                     (maxes-by :value)
@@ -399,7 +400,8 @@
       (and nearest-clean-wreck (inside? nearest-clean-wreck self)) (stop self) ;TODO check order of game loop. Might not be worthwhile to stop if I'll finish up the wreck this tick, and can pick something better to do instead.
       nearest-clean-wreck                                          (go-to self nearest-clean-wreck)
       nearest-wreck                                                (go-to self nearest-wreck)
-      :else                                                        (go-near-radial self nearest-dest-tanker (/ skill-range 2)))))
+      nearest-dest-tanker                                          (go-near-radial self nearest-dest-tanker (/ skill-range 2))
+      :else                                                        (go-near self {:x 0 :y 0 :radius 0}))))
 
 (defn destroyer-target?
   [entity]
