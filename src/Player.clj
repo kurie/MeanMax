@@ -48,6 +48,10 @@
     (+ (* dx dx)
        (* dy dy))))
 
+(defn distance
+  [entity1 entity2]
+  (Math/sqrt (distance-sq entity1 entity2)))
+
 (defn cart->polar
   "Returns a map {:theta :r} for the {:x :y} coordinates of the given entity"
   [{:keys [x y]}]
@@ -247,7 +251,7 @@
   velocity is 600 in the throttle direction"
   [{:keys [x y mass] :as entity}
    {px :x py :y throttle :throttle :as action}]
-  (let [distance (Math/sqrt (distance-sq entity action))
+  (let [distance (distance entity action)
         coef (/ throttle mass distance)]
     (if (<= distance epsilon)
       entity
@@ -384,7 +388,7 @@
   ([self other]
    (if (inside? other self)
      0
-     (turns-dist (distance-sq self other))))
+     (turns-dist (distance self other))))
   ([dist]
    (cond
      (= 0     dist)      0
@@ -421,12 +425,13 @@
 
 (defn go-to-tanker
   [self state]
-  (let [nearest-dest-tanker (some->> (:tankers state)
-                                     (filter #(in-bounds? %))
-                                     (not-empty)
-                                     (apply min-key #(distance-sq % (:destroyer state))))] ;TODO ideally within the 4000 unit circle, maybe do a check
-    (when nearest-dest-tanker
-      (go-near-radial self nearest-dest-tanker (/ skill-range 2)))))
+  (let [fattest-tanker (some->> (:tankers state)
+                                (filter #(< (distance-sq % {:x 0 :y 0}) (* 4000 4000)))
+                                (maxes-by :extra)
+                                (not-empty)
+                                (apply min-key #(distance-sq % self)))]
+    (when fattest-tanker
+      (go-near-radial self fattest-tanker -1))))
 
 (defn reaper-action
   [state]
@@ -472,12 +477,14 @@
   [state]
   (prn-err "destroyer-action start" (elapsed-millis state))
   (let [destroyer (:destroyer state)
-        nearest-tanker (some->> (:tankers state)
-                                (filter in-bounds?)
-                                (filter #(< (Math/sqrt (distance-sq % destroyer))
-                                            (+ (:radius destroyer) (:radius %) 300))) ;TODO go to the nearest tanker to the reaper that'll put us within grenade range of the reaper for protection
-                                (not-empty)
-                                (apply min-key #(distance-sq (:reaper state) %)))]
+        reaper (:reaper state)
+        nearby-tankers (filter (fn [tanker]
+                                 (and (in-bounds? tanker)
+                                      (< (distance-sq reaper tanker)
+                                         (* 3000 3000))))
+                               (:tankers state))
+        nearest-tanker (when (not-empty nearby-tankers)
+                         (apply min-key #(distance-sq reaper %) nearby-tankers))]
     (cond
       (and (nade-rage? state)
            (in-range? destroyer (:reaper state))
