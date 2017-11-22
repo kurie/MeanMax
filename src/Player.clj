@@ -36,7 +36,7 @@
   [tick]
   (if (= env :dev)
     1000
-    (if (zero? tick) 999 49)))
+    (if (zero? tick) 990 45)))
 
 ;; math
 
