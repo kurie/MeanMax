@@ -379,25 +379,44 @@
            #(distance-sq self %)
            entities)))
 
-(defn go-to-overlap
-  [self state]
-  (let [clean-overlaps (filter #(not (in-oil? % state)) (:overlaps state))
-        best-clean-overlap (some->> clean-overlaps
-                                    (maxes-by :value)
-                                    (apply min-key #(distance-sq % self)))]
-    (cond
-      (some #(inside? % self) clean-overlaps)                      (stop self)
-      best-clean-overlap                                           (go-to self best-clean-overlap))))
+(defn turns-dist
+  "A rough estimate of how many turns' travel a distance represents"
+  ([self other]
+   (if (inside? other self)
+     0
+     (turns-dist (distance-sq self other))))
+  ([dist]
+   (cond
+     (= 0     dist)      0
+     (<= 0    dist 600)  1
+     (<= 600  dist 1200) 2
+     (<= 1200 dist 2400) 3
+     (<= 2400 dist 3600) 4
+     (<= 3600 dist 5400) 5
+     (<= 5400 dist 9600) 7
+     :else 9)))
+
+(defn best-wreck
+  "Evaluates wreck or overlap of wrecks value, based on how much we can expect
+  to get from them and how long it will take to get there. Picks the best one
+  of the given collection."
+  [self wrecks-or-overlaps]
+  ; TODO check clean vs oily here, since the oil may be gone by the time we can get there
+  (when (not-empty wrecks-or-overlaps)
+    (apply max-key #(- (:value %) (turns-dist self %)) wrecks-or-overlaps)))
 
 (defn go-to-wreck
   [self state]
-  (let [clean-wrecks (filter #(not (in-oil? % state)) (:wrecks state))
-        nearest-clean-wreck (nearest-entity self clean-wrecks)
-        nearest-wreck (nearest-entity self (:wrecks state))]
+  (let [wrecks (:wrecks state)
+        clean-wrecks (filter #(not (in-oil? % state)) wrecks) ;TODO preprocess in-oil for wrecks and overlaps (and assoc them on, so I can look at how long they'll last in best-wreck)
+        overlaps (:overlaps state)
+        clean-overlaps (filter #(not (in-oil? % state)) overlaps)
+        target (or (best-wreck self (into clean-overlaps clean-wrecks))
+                   (best-wreck self (into overlaps wrecks)))]
     (cond
-      (and nearest-clean-wreck (inside? nearest-clean-wreck self)) (stop self) ;TODO check order of game loop. Might not be worthwhile to stop if I'll finish up the wreck this tick, and can pick something better to do instead.
-      nearest-clean-wreck                                          (go-to self nearest-clean-wreck)
-      nearest-wreck                                                (go-to self nearest-wreck))))
+      (nil? target)         nil
+      (inside? target self) (stop self) ;TODO check order of game loop. Might not be worthwhile to stop if I'll finish up the wreck this tick, and can pick something better to do instead.
+      target                (go-to self target))))
 
 (defn go-to-tanker
   [self state]
@@ -413,7 +432,6 @@
   (prn-err "reaper-action start" (elapsed-millis state))
   (let [self (:reaper state)]
     (or
-     (go-to-overlap self state)
      (go-to-wreck self state)
      (go-to-tanker self state)
      (go-near self {:x 0 :y 0 :radius 0}))))
@@ -616,7 +634,11 @@
   (->> (:wrecks group)
        (map :extra)
        (reduce +)
-       (assoc group :value)))
+       (assoc group :value))) ;TODO also assoc initial value-per-turn (number of wrecks), or value-per-turn sequence assuming someone is in the overlap consuming from all wrecks
+
+(defn evaluate-wreck
+  [wreck]
+  (assoc wreck :value (:extra wreck)))
 
 (defn find-overlaps
   [wrecks]
@@ -669,7 +691,7 @@
   "takes the state that we read in, and adds a bunch of other stuff"
   [state]
   (let [units (:units state)
-        wrecks (find-overlaps (filter wreck? units))]
+        wrecks (find-overlaps (map evaluate-wreck (filter wreck? units)))]
     (assoc state
            :wrecks wrecks
            :overlaps (find-overlap-groups wrecks)
