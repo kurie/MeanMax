@@ -14,7 +14,7 @@
        (* dy dy))))
 
 (defn cart->polar
-  "Returns a map {:theta :r-squared} for the {:x :y} coordinates of the given entity"
+  "Returns a map {:theta :r} for the {:x :y} coordinates of the given entity"
   [{:keys [x y]}]
   {:theta (Math/atan2 (double y) (double x))
    :r (Math/sqrt (+ (* x x) (* y y)))})
@@ -34,6 +34,22 @@
         radii (+ (:radius entity1) (:radius entity2))]
     (<= dist-sq (* radii radii))))
 
+(defn mid-chord
+  "Finds a point in the overlap between two entity circles
+  (Specifically the midpoint of the common chord)"
+  [{x1 :x y1 :y r1 :radius :as entity1}
+   {x2 :x y2 :y r2 :radius :as entity2}]
+  (let [dx (- x2 x1)
+        dy (- y2 y1)
+        dsq (+ (* dx dx) (* dy dy))
+        r1sq (* r1 r1)
+        r2sq (* r2 r2)
+        a*d (/ (+ r1sq (- r2sq) dsq)
+               2)]
+    {:x (+ x1 (* (/ a*d dsq) dx))
+     :y (+ y1 (* (/ a*d dsq) dy))
+     :a*d a*d}))
+
 (defn intersections
   "returns the points where the two entities' bounding circles intersect, or
   nil if they do not intersect (may be non-overlapping or one entirely
@@ -43,17 +59,13 @@
   (if (or (and (= x1 x2) (= y1 y2)) ;concentric circles
           (not (overlaps? entity1 entity2)))
     nil
-    (let [dsq (distance-sq entity1 entity2)
-          r1sq (* r1 r1)
-          r2sq (* r2 r2)
-          dx (- x2 x1)
+    (let [dx (- x2 x1)
           dy (- y2 y1)
-          a-frac (/ (+ r1sq (- r2sq) dsq) ; a / d
-                    (* 2 dsq))
-          xmid (+ x1 (* a-frac dx))
-          ymid (+ y1 (* a-frac dy))
-          h-div-d-sq (- (/ r1sq dsq) (* a-frac a-frac)) ; (h / d)^2
-          h-div-d (Math/sqrt h-div-d-sq)]
+          dsq (+ (* dx dx) (* dy dy))
+          r1sq (* r1 r1)
+          {xmid :x ymid :y a*d :a*d} (mid-chord entity1 entity2)
+          hsq (- r1sq (/ (* a*d a*d) dsq))
+          h-div-d (Math/sqrt (/ hsq dsq))]
       [{:x (+ xmid (* h-div-d dy))
         :y (- ymid (* h-div-d dx))}
        {:x (- xmid (* h-div-d dy))
@@ -62,7 +74,8 @@
 (comment
   (nil? (intersections {:x 0 :y 0 :radius 123} {:x 0 :y 0 :radius 456}))
   (nil? (intersections {:x 0 :y 0 :radius 100} {:x 301 :y 0 :radius 200}))
-  (= [{:x 100.0 :y 0.0} {:x 100.0 :y 0.0}] (intersections {:x 0 :y 0 :radius 100} {:x 300 :y 0 :radius 200})))
+  (= [{:x 100.0 :y 0.0} {:x 100.0 :y 0.0}] (intersections {:x 0 :y 0 :radius 100} {:x 300 :y 0 :radius 200}))
+  (= [{:x 100.0 :y 0.0} {:x 0.0 :y 100.0}] (intersections {:x 0 :y 0 :radius 100} {:x 100 :y 100 :radius 100})))
 
 (defn inside?
   "Is the center of entity2 within entity1"
