@@ -691,6 +691,7 @@
     (assoc base :units units)))
 
 (defn -main [& args]
+  (System/gc)
   (loop [tick 0]
     (let [state (read-state)
           _ (prn-err "after read-state" (elapsed-millis state))
