@@ -3,6 +3,40 @@
             [clojure.set :as set])
   (:gen-class))
 
+(def ^:const env :dev)
+
+;; util
+(defn prn-err
+  [& args]
+  (when (= env :dev)
+    (binding [*out* *err*]
+      (apply prn args))))
+
+(defn print-table-err
+  [& args]
+  (when (= env :dev)
+    (binding [*out* *err*]
+      (apply pp/print-table args))))
+
+(defn note-str
+  [s]
+  (when (= env :dev) s))
+
+(defn elapsed-nanos
+  [state]
+  (- (System/nanoTime) (:start-nanos state)))
+
+(defn elapsed-millis
+  [state]
+  (/ (- (System/nanoTime) (:start-nanos state))
+     1000000.0))
+
+(defn time-limit
+  [tick]
+  (if (= env :dev)
+    1000
+    (if (zero? tick) 999 49)))
+
 ;; math
 
 (defn distance-sq
@@ -237,20 +271,6 @@
   (update-reaper {:x 3160 :y 1180 :vx -117 :vy -323 :mass 0.5}
                  {:x 2206 :y -2033 :throttle 300}))
 
-(defn prn-err
-  [& args]
-  (binding [*out* *err*]
-    (apply prn args)))
-
-(defn pp-err
-  [object]
-  (pp/pprint object *err*))
-
-(defn print-table-err
-  [& args]
-  (binding [*out* *err*]
-    (apply pp/print-table args)))
-
 (defn go-to
   [{:keys [x y vx vy mass] :as entity}
    {tx :x ty :y :as target-entity}]
@@ -332,6 +352,7 @@
 (defn reaper-action
   [state]
   ;TODO find more valuable wreck overlaps
+  (prn-err "reaper-action start" (elapsed-millis state))
   (let [self (:reaper state)
         nearest-clean-wreck (nearest-entity self
                                             (filter #(not (in-oil? % state)) (:wrecks state)))
@@ -378,6 +399,7 @@
 
 (defn destroyer-action
   [state]
+  (prn-err "destroyer-action start" (elapsed-millis state))
   (let [destroyer (:destroyer state)
         nearest-tanker (some->> (:tankers state)
                                 (filter in-bounds?)
@@ -441,13 +463,13 @@
         act-dist-sq (min (* skill-range skill-range)
                          dist-sq)
         scale (Math/sqrt (/ act-dist-sq dist-sq))]
-    (prn-err "throw-oil scale" scale)
     {:x (+ x (* scale dx))
      :y (+ y (* scale dy))
      :note (str "OIL " (:unit-id target))}))
 
 (defn doof-action
   [state]
+  (prn-err "doof-action start" (elapsed-millis state))
   (let [doof (:doof state)
         oil-target (highest-enemy-reaper state)
         oil-target' (move oil-target)]
@@ -468,8 +490,8 @@
 (defn action-str
   [{:keys [x y throttle note timeout] :as action}]
   (cond
-    (and x y throttle) (format "%d %d %d %s" (int x) (int y) (int throttle) note)
-    (and x y) (format "SKILL %d %d %s" (int x) (int y) note)
+    (and x y throttle) (format "%d %d %d %s" (int x) (int y) (int throttle) (note-str note))
+    (and x y) (format "SKILL %d %d %s" (int x) (int y) (note-str note))
     timeout (str "WAIT TIMEOUT " timeout)
     (nil? action) "WAIT null"
     :else "WAIT fallthrough"))
@@ -556,15 +578,34 @@
            (map find-common-point)
            (map evaluate-overlap-group)))
 
+(defn augment-state
+  "takes the state that we read in, and adds a bunch of other stuff"
+  [state]
+  (let [units (:units state)
+        wrecks (find-overlaps (filter wreck? units))]
+    (assoc state
+           :wrecks wrecks
+           :overlaps (find-overlap-groups wrecks)
+           :tankers (filter tanker? units)
+           :oil (filter oil? units)
+           :tar (filter tar? units)
+           :reaper (first (filter #(and (reaper? %) (mine? %)) units))
+           :destroyer (first (filter #(and (destroyer? %) (mine? %)) units))
+           :doof (first (filter #(and (doof? %) (mine? %)) units)))))
+
 (defn read-state
   []
-  (let [base (hash-map :my-score (read)
+  (let [score (read) ;read one field before recording the start time
+        start-nanos (System/nanoTime)
+        _ (prn-err "start-nanos" start-nanos)
+        base (hash-map :my-score score
                        :enemy-score-1 (read)
                        :enemy-score-2 (read)
                        :my-rage (read)
                        :enemy-rage-1 (read)
                        :enemy-rage-2 (read)
-                       :unit-count (read))
+                       :unit-count (read)
+                       :start-nanos start-nanos)
         units (doall (for [i (range (:unit-count base))]
                        (hash-map :unit-id (read)
                                  :unit-type (read)
@@ -576,30 +617,21 @@
                                  :vx (read)
                                  :vy (read)
                                  :extra (read)
-                                 :extra2 (read))))
-        wrecks (find-overlaps (filter wreck? units))]
-    (assoc base
-           :units units
-           :wrecks wrecks
-           :overlaps (find-overlap-groups wrecks)
-           :tankers (filter tanker? units)
-           :oil (filter oil? units)
-           :tar (filter tar? units)
-           :reaper (first (filter #(and (reaper? %) (mine? %)) units))
-           :destroyer (first (filter #(and (destroyer? %) (mine? %)) units))
-           :doof (first (filter #(and (doof? %) (mine? %)) units)))))
+                                 :extra2 (read))))]
+    (assoc base :units units)))
 
 (defn -main [& args]
-  (while true
-    (let [state (read-state)]
+  (loop [tick 0]
+    (let [state (read-state)
+          _ (prn-err "after read-state" (elapsed-millis state))
+          state' (augment-state state)
+          max-millis (time-limit tick)]
+      (prn-err "after augment" (elapsed-millis state'))
 
-      ;(pp-err (select-keys state [:my-score :enemy-score-1 :enemy-score-2 :my-rage :enemy-rage-1 :enemy-rage-2 :unit-count]))
-      ;(print-table-err unit-keys (:units state))
-      (pp-err (:overlaps state))
-
-      ; Write action to stdout
-      (doseq [action (actions state)]
+      (doseq [action (actions state')
+              :let [t (- max-millis (elapsed-millis state'))]]
         (-> action
-            (deref 45 {:timeout 45})
+            (deref t {:timeout max-millis})
             (action-str)
-            (println))))))
+            (println))))
+    (recur (inc tick))))
