@@ -77,6 +77,19 @@
   (= [{:x 100.0 :y 0.0} {:x 100.0 :y 0.0}] (intersections {:x 0 :y 0 :radius 100} {:x 300 :y 0 :radius 200}))
   (= [{:x 100.0 :y 0.0} {:x 0.0 :y 100.0}] (intersections {:x 0 :y 0 :radius 100} {:x 100 :y 100 :radius 100})))
 
+(defn all-intersections
+  [[entity1 & others]]
+  (into (for [entity2 others] (intersections entity1 entity2))
+        (when (not-empty others) (all-intersections others))))
+
+(defn average-point
+  [points]
+  (let [xs (reduce + (map :x points))
+        ys (reduce + (map :y points))
+        cnt (count points)]
+    {:x (/ xs cnt)
+     :y (/ ys cnt)}))
+
 (defn inside?
   "Is the center of entity2 within entity1"
   [{:keys [radius] :as entity1}
@@ -474,6 +487,30 @@
    :extra
    :extra2])
 
+(defn find-common-point
+  "Takes a collection of overlapping wrecks and finds a point that is within all of them.
+  returns a map like
+  {:wrecks #{the wrecks}
+   :common {:x double :y double}}"
+  [wrecks]
+  {:wrecks wrecks
+   :common (if (= 2 (count wrecks))
+             (apply mid-chord wrecks)
+             (->> wrecks
+                  (vec)
+                  (all-intersections)
+                  (filter (fn [point] (every? #(inside? % point) wrecks)))
+                  (average-point)))})
+
+(defn evaluate-overlap-group
+  "Takes a map from `find-common-point` and adds a :value key with a numeric
+  score for that group"
+  [group]
+  (->> (:wrecks group)
+       (map :extra)
+       (reduce +)
+       (assoc group :value)))
+
 (defn find-overlaps
   [wrecks]
   (for [wreck wrecks]
@@ -481,8 +518,7 @@
 
 (defn bron-kerbosch
   "Returns all of the maximal cliques in the graph formed by the vertices in
-  set p, given a neighbors-fn that takes a vertex and returns a set of its
-  neighbors"
+  set p, given a neighbors-fn that takes two vertices and returns true if they are neighbors"
   ([neighbors-fn p] (bron-kerbosch #{} (set p) #{} neighbors-fn))
   ([r p x neighbors-fn]
    (if (and (empty? p) (empty? x))
@@ -490,14 +526,13 @@
      (loop [p p
             x x
             result []]
-       (let [v (first p)
-             neighbors (neighbors-fn v)
-             new-cliques (bron-kerbosch (conj r v)
-                                        (set/intersection p neighbors)
-                                        (set/intersection x neighbors)
-                                        neighbors-fn)]
-         (if (empty? p)
-           result
+       (if (empty? p)
+         result
+         (let [v (first p)
+               new-cliques (bron-kerbosch (conj r v)
+                                          (set/select #(neighbors-fn v %) p)
+                                          (set/select #(neighbors-fn v %) x)
+                                          neighbors-fn)]
            (recur (disj p v)
                   (conj x v)
                   (into result new-cliques))))))))
@@ -510,13 +545,16 @@
                          4 #{3 5 6}
                          5 #{1 2 4}
                          6 #{4}}]
-    (bron-kerbosch wikipedia-neigh wikipedia-nodes)))
+    (bron-kerbosch #((wikipedia-neigh %1) %2) wikipedia-nodes)))
 
 (defn find-overlap-groups
   [wrecks]
-  (->> wrecks
-       (remove #(empty? (:overlaps %)))
-       (bron-kerbosch :overlaps)))
+  (some->> wrecks
+           (remove #(empty? (:overlaps %)))
+           (not-empty)
+           (bron-kerbosch (fn [w1 w2] (contains? (:overlaps w1) w2)))
+           (map find-common-point)
+           (map evaluate-overlap-group)))
 
 (defn read-state
   []
