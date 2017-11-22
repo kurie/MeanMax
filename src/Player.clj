@@ -5,6 +5,7 @@
   (:gen-class))
 
 (def ^:const env :dev)
+(def ^:const sha "00000000")
 
 ;; util
 (defn prn-err
@@ -21,7 +22,9 @@
 
 (defn note-str
   [s]
-  (when (= env :dev) s))
+  (if (= env :dev)
+    s
+    (subs sha 0 8)))
 
 (defn elapsed-nanos
   [state]
