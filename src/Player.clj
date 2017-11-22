@@ -391,11 +391,12 @@
                                      (filter #(in-bounds? %))
                                      (not-empty)
                                      (apply min-key #(distance-sq % (:destroyer state)))) ;TODO ideally within the 4000 unit circle, maybe do a check
-        best-clean-overlap (some->> (:overlaps state)
-                                    (filter #(not (in-oil? % state)))
+        clean-overlaps (filter #(not (in-oil? % state)) (:overlaps state))
+        best-clean-overlap (some->> clean-overlaps
                                     (maxes-by :value)
                                     (apply min-key #(distance-sq % self)))]
     (cond
+      (some #(inside? % self) clean-overlaps)                      (stop self)
       best-clean-overlap                                           (go-to self best-clean-overlap)
       (and nearest-clean-wreck (inside? nearest-clean-wreck self)) (stop self) ;TODO check order of game loop. Might not be worthwhile to stop if I'll finish up the wreck this tick, and can pick something better to do instead.
       nearest-clean-wreck                                          (go-to self nearest-clean-wreck)
@@ -567,7 +568,8 @@
       {:wrecks wrecks
        :unit-id (str "CF" (string/join "," (map :unit-id wrecks)))
        :x (:x common)
-       :y (:y common)})))
+       :y (:y common)
+       :radius 100})))
 
 (comment
   (def wrecks [{:radius 850, :x 783, :y 1908}
@@ -646,6 +648,7 @@
            (not-empty)
            (bron-kerbosch (fn [w1 w2] (contains? (:overlaps w1) (:unit-id w2))))
            (mapv find-common-point)
+           (remove nil?)
            (mapv evaluate-overlap-group)))
 
 (defn augment-state
