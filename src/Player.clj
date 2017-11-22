@@ -325,9 +325,9 @@
         nearest-wreck (nearest-entity self (:wrecks state))
         nearest-dest-tanker (some->> (:tankers state)
                                      (not-empty)
-                                     (apply min-key #(distance-sq % (:destroyer state))))]
+                                     (apply min-key #(distance-sq % (:destroyer state))))] ;TODO make sure it's inbounds, ideally within the 4000 unit circle
     (cond
-      (and nearest-clean-wreck (inside? nearest-clean-wreck self)) (stop self)
+      (and nearest-clean-wreck (inside? nearest-clean-wreck self)) (stop self) ;TODO check order of game loop. Might not be worthwhile to stop if I'll finish up the wreck this tick, and can pick something better to do instead.
       nearest-clean-wreck                                          (go-to self nearest-clean-wreck)
       nearest-wreck                                                (go-to self nearest-wreck)
       :else                                                        (go-near-radial self nearest-dest-tanker (/ skill-range 2)))))
