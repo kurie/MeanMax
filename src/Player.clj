@@ -402,6 +402,7 @@
   of the given collection."
   [self wrecks-or-overlaps]
   ; TODO check clean vs oily here, since the oil may be gone by the time we can get there
+  ; TODO look at the value-per-turn for the next n turns (where n is the time horizon, some small number or the number of turns remaining). 600 ticks = 200 turns
   (when (not-empty wrecks-or-overlaps)
     (apply max-key #(- (:value %) (turns-dist self %)) wrecks-or-overlaps)))
 
@@ -474,7 +475,7 @@
         nearest-tanker (some->> (:tankers state)
                                 (filter in-bounds?)
                                 (filter #(< (Math/sqrt (distance-sq % destroyer))
-                                            (+ (:radius destroyer) (:radius %) 300)))
+                                            (+ (:radius destroyer) (:radius %) 300))) ;TODO go to the nearest tanker to the reaper that'll put us within grenade range of the reaper for protection
                                 (not-empty)
                                 (apply min-key #(distance-sq (:reaper state) %)))]
     (cond
