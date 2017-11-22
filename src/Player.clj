@@ -1,6 +1,7 @@
 (ns Player
   (:require [clojure.pprint :as pp]
-            [clojure.set :as set])
+            [clojure.set :as set]
+            [clojure.string :as string])
   (:gen-class))
 
 (def ^:const env :dev)
@@ -137,6 +138,28 @@
    entity2]
   (< (distance-sq entity1 entity2)
      (* radius radius)))
+
+(defn maxes-by
+  [f coll]
+  (when (not-empty coll)
+    (let [groups (group-by f coll)
+          max-k (reduce max (keys groups))]
+      (get groups max-k))))
+
+(defn mins-by
+  [f coll]
+  (let [groups (group-by f coll)
+        min-k (reduce min (keys groups))]
+    (get groups min-k)))
+
+(comment
+  (def coll [{:a 1 :b 1 :c 3}
+             {:a 1 :b 2 :c 1}
+             {:a 1 :b 2 :c 2}
+             {:a 0 :b 3 :c 3}])
+
+  (maxes-by :c (shuffle coll))
+  (mins-by :c (shuffle coll)))
 
 ;; model
 
@@ -366,8 +389,13 @@
         nearest-wreck (nearest-entity self (:wrecks state))
         nearest-dest-tanker (some->> (:tankers state)
                                      (not-empty)
-                                     (apply min-key #(distance-sq % (:destroyer state))))] ;TODO make sure it's inbounds, ideally within the 4000 unit circle
+                                     (apply min-key #(distance-sq % (:destroyer state)))) ;TODO make sure it's inbounds, ideally within the 4000 unit circle
+        best-clean-overlap (some->> (:overlaps state)
+                                    (filter #(not (in-oil? % state)))
+                                    (maxes-by :value)
+                                    (apply min-key #(distance-sq % self)))]
     (cond
+      best-clean-overlap                                           (go-to self best-clean-overlap)
       (and nearest-clean-wreck (inside? nearest-clean-wreck self)) (stop self) ;TODO check order of game loop. Might not be worthwhile to stop if I'll finish up the wreck this tick, and can pick something better to do instead.
       nearest-clean-wreck                                          (go-to self nearest-clean-wreck)
       nearest-wreck                                                (go-to self nearest-wreck)
@@ -520,17 +548,21 @@
   "Takes a collection of overlapping wrecks and finds a point that is within all of them.
   returns a map like
   {:wrecks #{the wrecks}
-   :common {:x double :y double}}"
+   :x double
+   :y double}"
   [wrecks]
-  {:wrecks wrecks
-   :common (cond
-             (< (count wrecks) 2) (throw (Exception. (str "not enough wrecks: " (count wrecks))))
-             (= 2 (count wrecks)) (apply mid-chord wrecks) ;TODO find out if this is meaningless when one circle is inside the other
-             :else (->> wrecks
-                        (vec)
-                        (all-intersections)
-                        (filter (fn [point] (every? #(inside? % point) wrecks)))
-                        (average-point)))})
+  (let [common (cond
+                 (< (count wrecks) 2) (throw (Exception. (str "not enough wrecks: " (count wrecks))))
+                 (= 2 (count wrecks)) (apply mid-chord wrecks) ;TODO find out if this is meaningless when one circle is inside the other
+                 :else (->> wrecks
+                            (vec)
+                            (all-intersections)
+                            (filter (fn [point] (every? #(inside? % point) wrecks)))
+                            (average-point)))]
+    {:wrecks wrecks
+     :unit-id (str "CF" (string/join "," (map :unit-id wrecks)))
+     :x (:x common)
+     :y (:y common)}))
 
 (comment
   (def wrecks [{:radius 850, :x 783, :y 1908}
