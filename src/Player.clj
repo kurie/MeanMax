@@ -557,12 +557,12 @@
   (let [common (cond
                  (< (count wrecks) 2) (throw (Exception. (str "not enough wrecks: " (count wrecks))))
                  (= 2 (count wrecks)) (apply mid-chord wrecks) ;TODO find out if this is meaningless when one circle is inside the other
-                 :else (->> wrecks
-                            (vec)
-                            (all-intersections)
-                            (filter (fn [point] (every? #(inside? % point) wrecks)))
-                            (not-empty)
-                            (average-point)))]
+                 :else (some->> wrecks
+                                (vec)
+                                (all-intersections)
+                                (filter (fn [point] (every? #(inside? % point) wrecks)))
+                                (not-empty)
+                                (average-point)))]
     (when (some? common)
       {:wrecks wrecks
        :unit-id (str "CF" (string/join "," (map :unit-id wrecks)))
