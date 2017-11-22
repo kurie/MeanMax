@@ -787,5 +787,6 @@
         (-> action
             (deref t {:timeout max-millis})
             (action-str)
-            (println))))
+            (println)))
+      (flush))
     (recur (inc tick))))
