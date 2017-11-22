@@ -379,30 +379,44 @@
            #(distance-sq self %)
            entities)))
 
-(defn reaper-action
-  [state]
-  ;TODO find more valuable wreck overlaps
-  (prn-err "reaper-action start" (elapsed-millis state))
-  (let [self (:reaper state)
-        nearest-clean-wreck (nearest-entity self
-                                            (filter #(not (in-oil? % state)) (:wrecks state)))
-        nearest-wreck (nearest-entity self (:wrecks state))
-        nearest-dest-tanker (some->> (:tankers state)
-                                     (filter #(in-bounds? %))
-                                     (not-empty)
-                                     (apply min-key #(distance-sq % (:destroyer state)))) ;TODO ideally within the 4000 unit circle, maybe do a check
-        clean-overlaps (filter #(not (in-oil? % state)) (:overlaps state))
+(defn go-to-overlap
+  [self state]
+  (let [clean-overlaps (filter #(not (in-oil? % state)) (:overlaps state))
         best-clean-overlap (some->> clean-overlaps
                                     (maxes-by :value)
                                     (apply min-key #(distance-sq % self)))]
     (cond
       (some #(inside? % self) clean-overlaps)                      (stop self)
-      best-clean-overlap                                           (go-to self best-clean-overlap)
+      best-clean-overlap                                           (go-to self best-clean-overlap))))
+
+(defn go-to-wreck
+  [self state]
+  (let [clean-wrecks (filter #(not (in-oil? % state)) (:wrecks state))
+        nearest-clean-wreck (nearest-entity self clean-wrecks)
+        nearest-wreck (nearest-entity self (:wrecks state))]
+    (cond
       (and nearest-clean-wreck (inside? nearest-clean-wreck self)) (stop self) ;TODO check order of game loop. Might not be worthwhile to stop if I'll finish up the wreck this tick, and can pick something better to do instead.
       nearest-clean-wreck                                          (go-to self nearest-clean-wreck)
-      nearest-wreck                                                (go-to self nearest-wreck)
-      nearest-dest-tanker                                          (go-near-radial self nearest-dest-tanker (/ skill-range 2))
-      :else                                                        (go-near self {:x 0 :y 0 :radius 0}))))
+      nearest-wreck                                                (go-to self nearest-wreck))))
+
+(defn go-to-tanker
+  [self state]
+  (let [nearest-dest-tanker (some->> (:tankers state)
+                                     (filter #(in-bounds? %))
+                                     (not-empty)
+                                     (apply min-key #(distance-sq % (:destroyer state))))] ;TODO ideally within the 4000 unit circle, maybe do a check
+    (when nearest-dest-tanker
+      (go-near-radial self nearest-dest-tanker (/ skill-range 2)))))
+
+(defn reaper-action
+  [state]
+  (prn-err "reaper-action start" (elapsed-millis state))
+  (let [self (:reaper state)]
+    (or
+     (go-to-overlap self state)
+     (go-to-wreck self state)
+     (go-to-tanker self state)
+     (go-near self {:x 0 :y 0 :radius 0}))))
 
 (defn destroyer-target?
   [entity]
