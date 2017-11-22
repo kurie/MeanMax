@@ -413,9 +413,9 @@
 (defn go-to-wreck
   [self state]
   (let [wrecks (:wrecks state)
-        clean-wrecks (filter #(not (in-oil? % state)) wrecks) ;TODO preprocess in-oil for wrecks and overlaps (and assoc them on, so I can look at how long they'll last in best-wreck)
+        clean-wrecks (remove :in-oil wrecks)
         overlaps (:overlaps state)
-        clean-overlaps (filter #(not (in-oil? % state)) overlaps)
+        clean-overlaps (remove :in-oil overlaps)
         target (or (best-wreck self (into clean-overlaps clean-wrecks))
                    (best-wreck self (into overlaps wrecks)))]
     (cond
@@ -695,16 +695,26 @@
            (remove nil?)
            (mapv evaluate-overlap-group)))
 
+(defn apply-oil
+  [entity oil]
+  (let [in-oils (filter #(inside? % entity) oil)
+        turns (when (not-empty in-oils)
+                (apply max (map :extra in-oils)))]
+    (if (some? turns)
+      (assoc entity :in-oil turns)
+      entity)))
+
 (defn augment-state
   "takes the state that we read in, and adds a bunch of other stuff"
   [state]
   (let [units (:units state)
-        wrecks (find-overlaps (map evaluate-wreck (filter wreck? units)))]
+        oil (filter oil? units)
+        wrecks (find-overlaps (map #(apply-oil % oil) (map evaluate-wreck (filter wreck? units))))]
     (assoc state
            :wrecks wrecks
-           :overlaps (find-overlap-groups wrecks)
+           :overlaps (map #(apply-oil % oil) (find-overlap-groups wrecks))
            :tankers (filter tanker? units)
-           :oil (filter oil? units)
+           :oil oil
            :tar (filter tar? units)
            :reaper (first (filter #(and (reaper? %) (mine? %)) units))
            :destroyer (first (filter #(and (destroyer? %) (mine? %)) units))
