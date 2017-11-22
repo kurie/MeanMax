@@ -407,13 +407,15 @@
      :else 9)))
 
 (defn value-over-time
+  "Average value per tick of the given wreck-or-state until it's exhausted or for `tick` ticks"
   [self wreck-or-overlap state ticks]
   (let [oil-time (:in-oil wreck-or-overlap) ; oil-time is in #{nil 1 2 3}
         travel-time (turns-dist self wreck-or-overlap)
         start-time (max (or oil-time 0) travel-time)
-        remaining-time (- ticks start-time)]
-    (if (pos? remaining-time)
-      (reduce + (take remaining-time (:values-per-turn wreck-or-overlap)))
+        remaining-time (- ticks start-time)
+        time-values (take remaining-time (:values-per-turn wreck-or-overlap))]
+    (if (not-empty time-values)
+      (/ (reduce + time-values) (count time-values))
       0)))
 
 (defn best-wreck
