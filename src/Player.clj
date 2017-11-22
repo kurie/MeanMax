@@ -80,8 +80,8 @@
         r2sq (* r2 r2)
         a*d (/ (+ r1sq (- r2sq) dsq)
                2)]
-    {:x (+ x1 (* (/ a*d dsq) dx))
-     :y (+ y1 (* (/ a*d dsq) dy))
+    {:x (double (+ x1 (* (/ a*d dsq) dx)))
+     :y (double (+ y1 (* (/ a*d dsq) dy)))
      :a*d a*d}))
 
 (defn intersections
@@ -99,21 +99,28 @@
           r1sq (* r1 r1)
           {xmid :x ymid :y a*d :a*d} (mid-chord entity1 entity2)
           hsq (- r1sq (/ (* a*d a*d) dsq))
-          h-div-d (Math/sqrt (/ hsq dsq))]
-      [{:x (+ xmid (* h-div-d dy))
-        :y (- ymid (* h-div-d dx))}
-       {:x (- xmid (* h-div-d dy))
-        :y (+ ymid (* h-div-d dx))}])))
+          h-div-d (* 0.99 (Math/sqrt (/ hsq dsq))) ;fudging this down to make sure we're inside the circles
+          hx (* h-div-d dy)
+          hy (* h-div-d dx)]
+      [{:x (+ xmid hx)
+        :y (- ymid hy)}
+       {:x (- xmid hx)
+        :y (+ ymid hy)}])))
 
 (comment
   (nil? (intersections {:x 0 :y 0 :radius 123} {:x 0 :y 0 :radius 456}))
   (nil? (intersections {:x 0 :y 0 :radius 100} {:x 301 :y 0 :radius 200}))
   (= [{:x 100.0 :y 0.0} {:x 100.0 :y 0.0}] (intersections {:x 0 :y 0 :radius 100} {:x 300 :y 0 :radius 200}))
-  (= [{:x 100.0 :y 0.0} {:x 0.0 :y 100.0}] (intersections {:x 0 :y 0 :radius 100} {:x 100 :y 100 :radius 100})))
+  (= [{:x 100.0 :y 0.0} {:x 0.0 :y 100.0}] (intersections {:x 0 :y 0 :radius 100} {:x 100 :y 100 :radius 100}))
+
+  (let [c1 {:radius 800, :x 731, :y 1665}
+        c2 {:radius 750, :x -166, :y 2539}]
+    (= [{:x -54.883057710783646, :y 1800.0748252098704} {:x 575.5616265208137, :y 2447.11015902651}]
+       (intersections c1 c2))))
 
 (defn all-intersections
   [[entity1 & others]]
-  (into (for [entity2 others] (intersections entity1 entity2))
+  (into (mapcat #(intersections entity1 %) others)
         (when (not-empty others) (all-intersections others))))
 
 (defn average-point
@@ -249,8 +256,8 @@
 (defn adjust
   [entity]
   (-> entity
-      (update :x #(Math/round %))
-      (update :y #(Math/round %))
+      (update :x #(Math/round ^Double %))
+      (update :y #(Math/round ^Double %))
       (update :vx #(Math/round (* % (- 1.0 (:friction entity)))))
       (update :vy #(Math/round (* % (- 1.0 (:friction entity)))))))
 
@@ -308,7 +315,7 @@
 
 (defn go-near-radial
   [self target & [buffer]]
-  (let [buffer (or buffer 0)
+  (let [^Integer buffer (or buffer 0)
         dist (+ (Math/abs buffer) (:radius self) (:radius target))
         sign (if (zero? buffer)
                1
@@ -516,13 +523,38 @@
    :common {:x double :y double}}"
   [wrecks]
   {:wrecks wrecks
-   :common (if (= 2 (count wrecks))
-             (apply mid-chord wrecks)
-             (->> wrecks
-                  (vec)
-                  (all-intersections)
-                  (filter (fn [point] (every? #(inside? % point) wrecks)))
-                  (average-point)))})
+   :common (cond
+             (< (count wrecks) 2) (throw (Exception. (str "not enough wrecks: " (count wrecks))))
+             (= 2 (count wrecks)) (apply mid-chord wrecks) ;TODO find out if this is meaningless when one circle is inside the other
+             :else (->> wrecks
+                        (vec)
+                        (all-intersections)
+                        (filter (fn [point] (every? #(inside? % point) wrecks)))
+                        (average-point)))})
+
+(comment
+  (def wrecks [{:radius 850, :x 783, :y 1908}
+               {:radius 800, :x 731, :y 1665}
+               {:radius 750, :x -166, :y 2539}])
+
+  (overlaps? (wrecks 0) (wrecks 1))
+  (overlaps? (wrecks 1) (wrecks 2))
+  (overlaps? (wrecks 2) (wrecks 0))
+
+  (every? #(inside? (wrecks 0) %) (intersections (wrecks 0) (wrecks 1)))
+  (every? #(inside? (wrecks 1) %) (intersections (wrecks 0) (wrecks 1)))
+  (every? #(inside? (wrecks 1) %) (intersections (wrecks 1) (wrecks 2)))
+  (every? #(inside? (wrecks 2) %) (intersections (wrecks 1) (wrecks 2)))
+
+  (def pts (all-intersections wrecks))
+  (filter #(inside? (wrecks 0) %) pts)
+  (filter #(inside? (wrecks 1) %) pts)
+  (filter #(inside? (wrecks 2) %) pts)
+
+  (->> wrecks
+       (vec)
+       (all-intersections)
+       (filter (fn [point] (every? #(inside? % point) wrecks)))))
 
 (defn evaluate-overlap-group
   "Takes a map from `find-common-point` and adds a :value key with a numeric
@@ -536,12 +568,13 @@
 (defn find-overlaps
   [wrecks]
   (for [wreck wrecks]
-    (assoc wreck :overlaps (set (filter #(and (overlaps? wreck %) (not= wreck %)) wrecks)))))
+    (assoc wreck :overlaps (set (map :unit-id (filter #(and (overlaps? wreck %) (not= wreck %)) wrecks))))))
 
 (defn bron-kerbosch
   "Returns all of the maximal cliques in the graph formed by the vertices in
   set p, given a neighbors-fn that takes two vertices and returns true if they are neighbors"
-  ([neighbors-fn p] (bron-kerbosch #{} (set p) #{} neighbors-fn))
+  ([neighbors-fn p]
+   (bron-kerbosch #{} (set p) #{} neighbors-fn))
   ([r p x neighbors-fn]
    (if (and (empty? p) (empty? x))
      [r]
@@ -574,9 +607,9 @@
   (some->> wrecks
            (remove #(empty? (:overlaps %)))
            (not-empty)
-           (bron-kerbosch (fn [w1 w2] (contains? (:overlaps w1) w2)))
-           (map find-common-point)
-           (map evaluate-overlap-group)))
+           (bron-kerbosch (fn [w1 w2] (contains? (:overlaps w1) (:unit-id w2))))
+           (mapv find-common-point)
+           (mapv evaluate-overlap-group)))
 
 (defn augment-state
   "takes the state that we read in, and adds a bunch of other stuff"
