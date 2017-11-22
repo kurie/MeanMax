@@ -291,7 +291,7 @@
 (defn update-reaper
   [entity action]
   (-> entity
-      (assoc :friction reaper-friction) ;TODO there will be special friction conditions later
+      (assoc :friction reaper-friction)
       (thrust action)
       (move)
       (adjust)))
@@ -420,7 +420,7 @@
                    (best-wreck self (into overlaps wrecks)))]
     (cond
       (nil? target)         nil
-      (inside? target self) (stop self) ;TODO check order of game loop. Might not be worthwhile to stop if I'll finish up the wreck this tick, and can pick something better to do instead.
+      (inside? target self) (stop self)
       target                (go-to self target))))
 
 (defn go-to-tanker
