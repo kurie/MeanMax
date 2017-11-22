@@ -639,14 +639,21 @@
   "Takes a map from `find-common-point` and adds a :value key with a numeric
   score for that group"
   [group]
-  (->> (:wrecks group)
-       (map :extra)
-       (reduce +)
-       (assoc group :value))) ;TODO also assoc initial value-per-turn (number of wrecks), or value-per-turn sequence assuming someone is in the overlap consuming from all wrecks
+  (let [values (map :extra (:wrecks group))
+        max-value (apply max values)
+        values-per-turn (for [turn (range max-value)]
+                          (count (filter #(> % turn) values)))]
+    (assoc group
+           :value (reduce + values)
+           :values-per-turn values-per-turn
+           :first-turn-value (first values-per-turn))))
 
 (defn evaluate-wreck
   [wreck]
-  (assoc wreck :value (:extra wreck)))
+  (assoc wreck
+         :value (:extra wreck)
+         :values-per-turn (repeat (:extra wreck) 1)
+         :first-turn-value 1))
 
 (defn find-overlaps
   [wrecks]
