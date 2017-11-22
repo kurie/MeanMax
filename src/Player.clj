@@ -551,7 +551,8 @@
   returns a map like
   {:wrecks #{the wrecks}
    :x double
-   :y double}"
+   :y double}
+  Returns nil if there didn't turn out to be any common point."
   [wrecks]
   (let [common (cond
                  (< (count wrecks) 2) (throw (Exception. (str "not enough wrecks: " (count wrecks))))
@@ -560,11 +561,13 @@
                             (vec)
                             (all-intersections)
                             (filter (fn [point] (every? #(inside? % point) wrecks)))
+                            (not-empty)
                             (average-point)))]
-    {:wrecks wrecks
-     :unit-id (str "CF" (string/join "," (map :unit-id wrecks)))
-     :x (:x common)
-     :y (:y common)}))
+    (when (some? common)
+      {:wrecks wrecks
+       :unit-id (str "CF" (string/join "," (map :unit-id wrecks)))
+       :x (:x common)
+       :y (:y common)})))
 
 (comment
   (def wrecks [{:radius 850, :x 783, :y 1908}
