@@ -186,6 +186,12 @@
 (def ^:const field-radius 6000)
 (def ^:const skill-range 2000)
 (def ^:const skill-radius 1000)
+(def ^:const max-tick 200) ; 200 time steps, 600 game turns in the UI because they count every user's ticks
+
+(defn remaining-turns
+  "remaining turns, including the one we are planning"
+  [state]
+  (- max-tick (:tick state)))
 
 (defn nade-rage?
   [state]
@@ -400,24 +406,32 @@
      (<= 5400 dist 9600) 7
      :else 9)))
 
+(defn value-over-time
+  [self wreck-or-overlap state ticks]
+  (let [oil-time (:in-oil wreck-or-overlap) ; oil-time is in #{nil 1 2 3}
+        travel-time (turns-dist self wreck-or-overlap)
+        start-time (max (or oil-time 0) travel-time)
+        remaining-time (- ticks start-time)]
+    (if (pos? remaining-time)
+      (reduce + (take remaining-time (:values-per-turn wreck-or-overlap)))
+      0)))
+
 (defn best-wreck
   "Evaluates wreck or overlap of wrecks value, based on how much we can expect
   to get from them and how long it will take to get there. Picks the best one
   of the given collection."
-  [self wrecks-or-overlaps]
-  ; TODO check clean vs oily here, since the oil may be gone by the time we can get there
-  ; TODO look at the value-per-turn for the next n turns (where n is the time horizon, some small number or the number of turns remaining). 600 ticks = 200 turns
-  (when (not-empty wrecks-or-overlaps)
-    (apply max-key #(- (:value %) (turns-dist self %)) wrecks-or-overlaps)))
+  [self wrecks-or-overlaps state]
+  (let [time-horizon (min (remaining-turns state) 10)]
+    (when (not-empty wrecks-or-overlaps)
+      (apply max-key #(value-over-time self % state time-horizon) wrecks-or-overlaps))))
 
 (defn go-to-wreck
   [self state]
-  (let [wrecks (:wrecks state)
-        clean-wrecks (remove :in-oil wrecks)
-        overlaps (:overlaps state)
-        clean-overlaps (remove :in-oil overlaps)
-        target (or (best-wreck self (into clean-overlaps clean-wrecks))
-                   (best-wreck self (into overlaps wrecks)))]
+  (let [;wrecks (:wrecks state)
+        ;clean-wrecks (remove :in-oil wrecks)
+        ;overlaps (:overlaps state)
+        ;clean-overlaps (remove :in-oil overlaps)
+        target (best-wreck self (into (:overlaps state) (:wrecks state)) state)]
     (cond
       (nil? target)         nil
       (inside? target self) (stop self)
@@ -757,7 +771,7 @@
 (defn -main [& args]
   (System/gc)
   (loop [tick 0]
-    (let [state (read-state)
+    (let [state (assoc (read-state) :tick tick)
           _ (prn-err "after read-state" (elapsed-millis state))
           state' (augment-state state)
           max-millis (time-limit tick)]
