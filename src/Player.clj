@@ -415,11 +415,15 @@
   (let [oil-time (:in-oil wreck-or-overlap) ; oil-time is in #{nil 1 2 3}
         travel-time (turns-dist self wreck-or-overlap)
         start-time (max (or oil-time 0) travel-time)
-        remaining-time (- ticks start-time)
-        time-values (take remaining-time (:values-per-turn wreck-or-overlap))]
+        time-values (take ticks (concat (repeat start-time 0)
+                                        (:values-per-turn wreck-or-overlap)))]
     (if (not-empty time-values)
-      (/ (reduce + time-values) (count time-values))
-      0)))
+      {:avg-value (/ (reduce + time-values) (count time-values))
+       :oil-time oil-time
+       :travel-time travel-time
+       :start-time start-time
+       :time-values time-values}
+      {:avg-value 0})))
 
 (defn best-wreck
   "Evaluates wreck or overlap of wrecks value, based on how much we can expect
@@ -427,16 +431,15 @@
   of the given collection."
   [self wrecks-or-overlaps state]
   (let [time-horizon (min (remaining-turns state) 10)]
-    (when (not-empty wrecks-or-overlaps)
-      (apply max-key #(value-over-time self % state time-horizon) wrecks-or-overlaps))))
+    (some->> wrecks-or-overlaps
+             (not-empty)
+             (map #(merge % (value-over-time self % state time-horizon)))
+             (apply max-key :avg-value))))
 
 (defn go-to-wreck
   [self state]
-  (let [;wrecks (:wrecks state)
-        ;clean-wrecks (remove :in-oil wrecks)
-        ;overlaps (:overlaps state)
-        ;clean-overlaps (remove :in-oil overlaps)
-        target (best-wreck self (into (:overlaps state) (:wrecks state)) state)]
+  (let [target (best-wreck self (into (:overlaps state) (:wrecks state)) state)]
+    (prn-err "target" target)
     (cond
       (nil? target)         nil
       (inside? target self) (stop self)
