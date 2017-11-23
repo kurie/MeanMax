@@ -253,6 +253,15 @@
   [entity state]
   (some #(inside? % entity) (:oil state)))
 
+(defn highest-enemy-reaper
+  [state]
+  (let [reapers (->> (:units state)
+                     (filter reaper?)
+                     (group-by :player))]
+    (if (> (:enemy-score-1 state) (:enemy-score-2 state))
+      (first (get reapers 1))
+      (first (get reapers 2)))))
+
 (defn thrust
   "Update the vx and vy of the entity applying the given throttle action
 
@@ -515,7 +524,7 @@
     (or
      (protect-reaper destroyer state)
      (go-to-nearest-tanker destroyer state)
-     (follow-reaper destroyer state)))) ;TODO maybe just block the guy in the lead, along with the doof
+     (go-through destroyer (highest-enemy-reaper state)))))
 
 (defn circle-doof
   [doof]
@@ -540,15 +549,6 @@
        (not (inside? (assoc target :radius skill-radius) self))
        (in-wreck? target state)
        (not (in-oil? target state))))
-
-(defn highest-enemy-reaper
-  [state]
-  (let [reapers (->> (:units state)
-                     (filter reaper?)
-                     (group-by :player))]
-    (if (> (:enemy-score-1 state) (:enemy-score-2 state))
-      (first (get reapers 1))
-      (first (get reapers 2)))))
 
 (defn throw-oil
   "Try to throw oil at the given target, throwing short if we can still get them in the oil radius"
