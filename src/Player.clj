@@ -578,11 +578,29 @@
 (comment
   (doof-action {:doof {:x 0 :y 3000}}))
 
+(defn future-actions
+  [state]
+  [(future (let [action (reaper-action state)]
+             (prn-err "end reaper" (elapsed-millis state))
+             action))
+   (future (let [action (destroyer-action state)]
+             (prn-err "end destroyer" (elapsed-millis state))
+             action))
+   (future (let [action (doof-action state)]
+             (prn-err "end doof" (elapsed-millis state))
+             action))])
+
 (defn actions
   [state]
-  [(future (reaper-action state))
-   (future (destroyer-action state))
-   (future (doof-action state))])
+  (let [reaper (reaper-action state)
+        _ (prn-err "end reaper" (elapsed-millis state))
+        destroyer (destroyer-action state)
+        _ (prn-err "end destroyer" (elapsed-millis state))
+        doof (doof-action state)]
+    (prn-err "end doof" (elapsed-millis state))
+    [reaper
+     destroyer
+     doof]))
 
 (defn action-str
   [{:keys [x y throttle note timeout] :as action}]
@@ -785,8 +803,8 @@
       (doseq [action (actions state')
               :let [t (- max-millis (elapsed-millis state'))]]
         (-> action
-            (deref t {:timeout max-millis})
             (action-str)
             (println)))
-      (flush))
+      (flush)
+      (prn-err "end" (elapsed-millis state')))
     (recur (inc tick))))
