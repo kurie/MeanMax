@@ -456,6 +456,7 @@
       (go-near-radial self fattest-tanker -1))))
 
 (defn reaper-action
+  ;TODO the tanker collisions happen while units are moving, so it might be worthwhile to consider expected wrecks (given current tanker and destroyer velocities)
   [state]
   (prn-err "reaper-action start" (elapsed-millis state))
   (let [self (:reaper state)]
@@ -475,49 +476,46 @@
   (inside? (assoc self :radius skill-range)
            entity))
 
-(defn protect-reaper?
-  "Should we protect the reaper by throwing a grenade at its center?"
-  [self state]
-  (let [nade (assoc (:reaper state) :radius skill-radius)
-        enemies (filter enemy? (:units state))]
-    (and (in-wreck? (:reaper state) state)
-         (some #(inside? nade %) enemies))))
-
 (defn protect-reaper
   "Returns an action to protect the reaper"
   [self state]
-  (let [reaper (:reaper state)]
-    {:x (:x reaper)
-     :y (:y reaper)
-     :note "PROTEC"}))
+  (let [reaper (:reaper state)
+        nade (assoc reaper :radius skill-radius)
+        enemies (filter enemy? (:units state))]
+    (if (and (nade-rage? state)
+             (in-range? self reaper)
+             (in-wreck? reaper state)
+             (some #(inside? nade %) enemies))
+      {:x (:x reaper)
+       :y (:y reaper)
+       :note "PROTEC"})))
 
 (defn follow-reaper
   [self state]
   (go-near-radial self (:reaper state) (- (/ skill-range 2))))
 
+(defn go-to-nearest-tanker
+  [self state]
+  (when (< (count (:wrecks state)) 3)
+    (let [reaper (:reaper state)
+          nearby-tankers (filter (fn [tanker]
+                                   (and (in-bounds? tanker)
+                                        (< (distance-sq reaper tanker)
+                                           (* 3000 3000))))
+                                 (:tankers state))
+          nearest-tanker (when (not-empty nearby-tankers)
+                           (apply min-key #(distance-sq reaper %) nearby-tankers))]
+      (when nearest-tanker
+        (go-to self nearest-tanker)))))
+
 (defn destroyer-action
   [state]
   (prn-err "destroyer-action start" (elapsed-millis state))
-  (let [destroyer (:destroyer state)
-        reaper (:reaper state)
-        nearby-tankers (filter (fn [tanker]
-                                 (and (in-bounds? tanker)
-                                      (< (distance-sq reaper tanker)
-                                         (* 3000 3000))))
-                               (:tankers state))
-        nearest-tanker (when (not-empty nearby-tankers)
-                         (apply min-key #(distance-sq reaper %) nearby-tankers))]
-    (cond
-      (and (nade-rage? state)
-           (in-range? destroyer (:reaper state))
-           (protect-reaper? destroyer state))
-      (protect-reaper destroyer state)
-
-      nearest-tanker
-      (go-to destroyer nearest-tanker)
-
-      :else
-      (follow-reaper destroyer state))))
+  (let [destroyer (:destroyer state)]
+    (or
+     (protect-reaper destroyer state)
+     (go-to-nearest-tanker destroyer state)
+     (follow-reaper destroyer state)))) ;TODO maybe just block the guy in the lead, along with the doof
 
 (defn circle-doof
   [doof]
