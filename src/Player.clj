@@ -323,6 +323,108 @@
   (update-reaper {:x 3160 :y 1180 :vx -117 :vy -323 :mass 0.5}
                  {:x 2206 :y -2033 :throttle 300}))
 
+(defn vdot
+  [a b]
+  (reduce + (mapv * a b)))
+
+(defn perpendicular
+  [[x y]]
+  [(- y) x])
+
+(defn relative-velocities
+  "Returns the pair [vparallel, vperpendicular] where
+  vparallel is the speed the entities are moving apart along the line between them and
+  vperpendicular is the speed they are moving apart perpendicularly
+  Returns [NaN NaN] if they are already at the same position"
+  [{x1 :x y1 :y vx1 :vx vy1 :vy :as entity1}
+   {x2 :x y2 :y vx2 :vx vy2 :vy :as entity2}]
+  (let [dx (- x2 x1)
+        dy (- y2 y1)
+        d (Math/sqrt (+ (* dx dx) (* dy dy)))
+        norm-from-1 [(/ dx d)
+                     (/ dy d)]
+        dv [(- vx2 vx1)
+            (- vy2 vy1)]]
+    [(vdot norm-from-1 dv)
+     (vdot (perpendicular norm-from-1) dv)]))
+
+(comment
+  (relative-velocities {:x 0 :y 0 :vx 0 :vy 0} {:x 100 :y 0 :vx 0 :vy 0})
+  (relative-velocities {:x 0 :y 0 :vx 1 :vy 0} {:x 100 :y 0 :vx -1 :vy 0})
+  (relative-velocities {:x 0 :y 0 :vx 1 :vy 1} {:x 100 :y 0 :vx -1 :vy -1})
+  (relative-velocities {:x 0 :y 0 :vx 0 :vy 1} {:x 100 :y 100 :vx -1 :vy 0})
+  (relative-velocities {:x -70 :y -30 :vx 1 :vy 1 :radius 20} {:x 60 :y 30 :vx -1 :vy -1 :radius 20}))
+
+(defn collision-time
+  "Returns the time when entity1 and entity2 might collide.
+  A bit optimistic about collisions, in that it treats the entity boundaries like squares instead of circles,
+  so it could return a collision when the circles would have just barely missed.
+  Returns 0 if they have already collided
+  Returns nil if they will not collide in the future"
+  [{r1 :radius :as entity1}
+   {r2 :radius :as entity2}]
+  (let [dsq (distance-sq entity1 entity2)
+        sum-radii (+ r1 r2)
+        rsq (* sum-radii sum-radii)]
+    (if (< dsq rsq) ;already collided
+      0
+      (let [[vpar vperp] (relative-velocities entity1 entity2)
+            d (Math/sqrt dsq)
+            t (/ (- d sum-radii) ;time until vpar closes the gap
+                 (- vpar))
+            dperp (* t vperp)] ;how far they have moved apart in the perpendicular direction
+        (if (or (not (pos? t)) ; collision is not in the future
+                (> dperp sum-radii) (> (- dperp) sum-radii) ;have moved far enough perpendicularly to avoid
+                (zero? vpar)) ; not moving closer
+          nil
+          t)))))
+
+(comment
+  (collision-time {:x 0 :y 0 :vx 0 :vy 0 :radius 20} {:x 100 :y 0 :vx 0 :vy 0 :radius 20})
+  (collision-time {:x 0 :y 0 :vx 1 :vy 0 :radius 20} {:x 100 :y 0 :vx -1 :vy 0 :radius 20})
+  (collision-time {:x 0 :y 0 :vx 1 :vy 1 :radius 20} {:x 100 :y 0 :vx -1 :vy -1 :radius 20})
+  (collision-time {:x 0 :y 0 :vx 1 :vy 1 :radius 20} {:x 0 :y 100 :vx -1 :vy -1 :radius 20})
+  (collision-time {:x 0 :y 0 :vx 1 :vy 1 :radius 20} {:x 0 :y 100 :vx 1 :vy -1 :radius 20})
+  (collision-time {:x -70 :y -30 :vx 1 :vy 1 :radius 20} {:x 70 :y 30 :vx -1 :vy -1 :radius 20}) ;near miss at t=5
+  (collision-time {:x -70 :y -30 :vx 1 :vy 1 :radius 20} {:x 60 :y 30 :vx -1 :vy -1 :radius 20}) ;hit when entity2 starts a little further left
+  ;swap entities
+  (collision-time {:x 70 :y 30 :vx -1 :vy -1 :radius 20} {:x -70 :y -30 :vx 1 :vy 1 :radius 20}) ;near miss at t=5
+  (collision-time {:x 60 :y 30 :vx -1 :vy -1 :radius 20} {:x -70 :y -30 :vx 1 :vy 1 :radius 20}) ;hit when entity2 starts a little further left
+)
+
+(defn will-collide?
+  [entity1 entity2 max-time]
+  (let [t (collision-time entity1 entity2)]
+    (and t (< t max-time))))
+
+(comment
+  (will-collide? {:x 60 :y 30 :vx -1 :vy -1 :radius 20} {:x -70 :y -30 :vx 1 :vy 1 :radius 20} 10.0) ;not enough time
+  (will-collide? {:x 60 :y 30 :vx -1 :vy -1 :radius 20} {:x -70 :y -30 :vx 1 :vy 1 :radius 20} 40.0)) ;plenty of time
+
+(defn tankers-to-be-wrecked
+  [state]
+  (let [destroyers (filter destroyer? (:units state))]
+    (filter (fn [tanker]
+              (some (fn [destroyer] (will-collide? tanker destroyer 1.0))
+                    destroyers))
+            (filter tanker? (:units state)))))
+
+(comment
+  (let [destroyers [{:x 586 :y 0 :radius reaper-radius :vx 354 :vy -362 :unit-type 1}
+                    #_{:x -869 :y 868 :radius reaper-radius :vx 43 :vy 275 :unit-type 1}
+                    #_{:x 1188 :y 1712 :radius reaper-radius :vx -145 :vy 270 :unit-type 1}]
+        tankers [{:y 4320, :mass 3.0, :unit-type 3, :extra2 7, :extra 1, :unit-id 10, :radius 750, :vx 175, :vy -188, :player -1, :x -4013}
+                 {:y 5705, :mass 3.0, :unit-type 3, :extra2 8, :extra 1, :unit-id 13, :radius 800, :vx 174, :vy -190, :player -1, :x -5230}]]
+    (tankers-to-be-wrecked {:units (into destroyers tankers)}))
+
+  (will-collide? {:x 586 :y 0 :radius reaper-radius :vx 354 :vy -362 :unit-type 1}
+                 {:y 5705 :unit-type 3 :unit-id 13 :radius 800 :vx 174 :vy -190 :x -5230} 1.0)
+
+  (collision-time {:x 586 :y 0 :radius reaper-radius :vx 354 :vy -362 :unit-type 1}
+                  {:y 5705 :unit-type 3 :unit-id 13 :radius 800 :vx 174 :vy -190 :x -5230}))
+
+;; bot commands
+
 (defn go-to
   [{:keys [x y vx vy mass] :as entity}
    {tx :x ty :y :as target-entity}]
