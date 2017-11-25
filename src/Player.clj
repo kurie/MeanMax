@@ -856,10 +856,13 @@
   [state]
   (let [units (:units state)
         oil (filter oil? units)
-        wrecks (find-overlaps (map #(apply-oil % oil) (map evaluate-wreck (filter wreck? units))))]
+        wrecks (find-overlaps (map #(apply-oil % oil) (map evaluate-wreck (filter wreck? units))))
+        new-wrecks (tankers-to-be-wrecked state)
+        expected-wrecks (into wrecks new-wrecks)]
+    (prn-err "NEW WRECKS" new-wrecks)
     (assoc state
-           :wrecks wrecks
-           :overlaps (map #(apply-oil % oil) (find-overlap-groups wrecks))
+           :wrecks expected-wrecks
+           :overlaps (map #(apply-oil % oil) (find-overlap-groups expected-wrecks))
            :tankers (filter tanker? units)
            :oil oil
            :tar (filter tar? units)
